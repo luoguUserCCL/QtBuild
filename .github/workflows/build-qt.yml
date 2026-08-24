@@ -175,6 +175,35 @@ jobs:
           sed -i 's|#include "qtprintsupportglobal_p.h"|#include "/tmp/qtbase/src/printsupport/kernel/qtprintsupportglobal_p.h"|' "$QPRINT_P"
           sed -i 's|#include "qprinter.h"|#include "/tmp/qtbase/src/printsupport/kernel/qprinter.h"|' "$QPRINT_P"
           grep -n 'include' "$QPRINT_P" | head -8
+
+          echo ""
+          echo "--- patch 4: disable WIN32 PrintSupport block (cross-compile workaround) ---"
+          echo "Root cause analysis (after 16 failed runs): qwindowsprintdevice_p.h:46 fails"
+          echo "because QPrint namespace is not visible. QPrint is wrapped in #ifndef QT_NO_PRINTER"
+          echo "inside qprint_p.h. Cross-compile auto-detection probably sets QT_NO_PRINTER."
+          echo "Instead of fighting feature detection, just skip the entire WIN32 PrintSupport"
+          echo "block (qwindowsprintdevice.cpp + qwindowsprintersupport.cpp + qprintengine_win.cpp)."
+          echo "PrintSupport kernel sources (qprint.cpp, qprintdevice.cpp, qprintengine_pdf.cpp, etc.)"
+          echo "will still build, providing the cross-platform PDF engine. Most apps don't need"
+          echo "Windows-specific printer integration."
+          PSCMK=/tmp/qtbase/src/printsupport/CMakeLists.txt
+          echo "--- before patch (CONDITION blocks) ---"
+          grep -n 'CONDITION' "$PSCMK"
+          python3 - <<'PYEOF'
+          import re
+          p = '/tmp/qtbase/src/printsupport/CMakeLists.txt'
+          with open(p) as f: s = f.read()
+          new = s.replace(
+              'qt_internal_extend_target(PrintSupport CONDITION WIN32',
+              'qt_internal_extend_target(PrintSupport CONDITION FALSE  # patched: WIN32 printsupport has QPrint namespace cross-compile issues'
+          )
+          if new == s:
+              print("ERROR: WIN32 CONDITION pattern not found"); raise SystemExit(1)
+          with open(p, 'w') as f: f.write(new)
+          print("patched WIN32 -> FALSE")
+          PYEOF
+          echo "--- after patch (CONDITION blocks) ---"
+          grep -n 'CONDITION' "$PSCMK"
           echo "=== STEP patch-qt END ==="
 
       - name: "=== STEP 5 - Host-side configure (for host tools: moc/rcc/uic) ===
@@ -329,6 +358,29 @@ jobs:
           ls -la $PRIVATE_DIR/
           echo "=== STEP syncqt-forward-fix END ==="
 
+      - name: "=== STEP 7.6 - Dump configure diagnostics (config.summary + qconfig.h) ===
+        Print build/config.summary to see what features were auto-detected.
+        Grep include/QtCore/qconfig.h for QT_NO_PRINTER to confirm whether the
+        PrintSupport namespace is actually disabled. This diagnostic is needed
+        because qprint_p.h's namespace QPrint is wrapped in #ifndef QT_NO_PRINTER,
+        so any auto-detection that flips this macro breaks compilation."
+        run: |
+          set -ex
+          echo "=== STEP diag-config START ==="
+          echo "--- build/config.summary (full) ---"
+          cat /tmp/qtbase/build/config.summary 2>&1 | tee /tmp/config-summary.log
+          echo ""
+          echo "--- include/QtCore/qconfig.h grep QT_NO_PRINTER ---"
+          QCFG=/tmp/qtbase/build/include/QtCore/qconfig.h
+          ls -la $QCFG 2>/dev/null || echo "WARNING: $QCFG not found"
+          if [ -f "$QCFG" ]; then
+            grep -nE 'QT_NO_PRINTER|QT_NO_PRINTDIALOG|QT_NO_PRINTSUPPORT|QT_NO_PDF' $QCFG || echo "(no QT_NO_PRINTER etc. found — feature is ON)"
+          fi
+          echo ""
+          echo "--- grep 'printer' in configure log ---"
+          grep -iE 'printer|printsupport' /tmp/configure.log | head -20 || echo "(no printer mentions in configure.log)"
+          echo "=== STEP diag-config END ==="
+
       - name: "=== STEP 8 - Target-side build (cross-compile) ==="
         run: |
           set -ex
@@ -430,6 +482,7 @@ jobs:
             /tmp/host-build.log
             /tmp/host-install.log
             /tmp/configure.log
+            /tmp/config-summary.log
             /tmp/build.log
             /tmp/install.log
           retention-days: 7
