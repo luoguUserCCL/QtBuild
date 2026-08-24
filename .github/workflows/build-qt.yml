@@ -221,18 +221,32 @@ jobs:
           import re
           p = '/tmp/qtbase/src/plugins/platforms/windows/qwindowswindow.cpp'
           with open(p) as f: s = f.read()
-          # Match the #if QT_CONFIG(dynamicgl) ... #else block (non-greedy .*? with DOTALL)
+          # Match the #if QT_CONFIG(dynamicgl) ... #else blocks (non-greedy .*? with DOTALL).
+          # There are TWO such blocks in qwindowswindow.cpp:
+          #   1. Line 18: #include block (qwindowsglcontext.h vs qwindowsopenglcontext.h)
+          #   2. Line 2520: isSoftwareGl() function body (uses QOpenGLStaticContext::opengl32)
+          # Both must be patched to #if 0; otherwise:
+          #   - If only the #include block is patched, qwindowsglcontext.h is not included →
+          #     QOpenGLStaticContext not declared → isSoftwareGl() body still fails to compile
+          #   - Patching both makes: qwindowsopenglcontext.h IS included (from #else branch);
+          #     isSoftwareGl() returns false (from #else branch); QOpenGLStaticContext not referenced
           new = re.sub(
               r'#if QT_CONFIG\(dynamicgl\)\n.*?\n#else\n',
               '#if 0  // patched: cross-compile, QOpenGLStaticContext not declared\n#else\n',
-              s, flags=re.DOTALL, count=1)
+              s, flags=re.DOTALL, count=2)
           if new == s:
               print("ERROR: dynamicgl pattern not found in qwindowswindow.cpp"); raise SystemExit(1)
           with open(p, 'w') as f: f.write(new)
-          print("patched isSoftwareGl() #if QT_CONFIG(dynamicgl) -> #if 0")
+          # Verify both occurrences replaced
+          count_remaining = new.count('#if QT_CONFIG(dynamicgl)')
+          count_patched = new.count('#if 0  // patched: cross-compile, QOpenGLStaticContext')
+          print(f"patched {count_patched} occurrences, remaining QT_CONFIG(dynamicgl) = {count_remaining}")
           PYEOF
           echo "--- after patch (isSoftwareGl) ---"
           grep -B1 -A8 'isSoftwareGl' "$QWW" | head -15
+          echo ""
+          echo "--- after patch (#include block at line 18) ---"
+          sed -n '15,25p' "$QWW"
           echo "=== STEP patch-qt END ==="
 
       - name: "=== STEP 5 - Host-side configure (for host tools: moc/rcc/uic) ===
