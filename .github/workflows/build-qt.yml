@@ -146,9 +146,15 @@ jobs:
           echo ""
           echo "--- patch 2: qwindowsprintdevice_p.h missing QPrint namespace include ---"
           QWPDH=/tmp/qtbase/src/printsupport/platform/windows/qwindowsprintdevice_p.h
-          # Add explicit include after qplatformprintdevice.h (line 20)
-          if ! grep -q 'QtPrintSupport/private/qprint_p.h' "$QWPDH"; then
-            sed -i '20a #include <QtPrintSupport/private/qprint_p.h>' "$QWPDH"
+          # The original include <qpa/qplatformprintdevice.h> is supposed to chain-include
+          # <private/qprint_p.h> where namespace QPrint is defined, but syncqt may not
+          # have generated the QtPrintSupport/private/ forward headers when running
+          # inside cross-compile mode. Add an explicit relative path include as a fallback.
+          if ! grep -q 'kernel/qprint_p.h' "$QWPDH"; then
+            # Remove any prior QtPrintSupport/private/qprint_p.h include added by earlier patch
+            sed -i '/QtPrintSupport\/private\/qprint_p.h/d' "$QWPDH"
+            # Insert after the qpa/qplatformprintdevice.h include (line 20)
+            sed -i '20a #include "../../kernel/qprint_p.h"' "$QWPDH"
           fi
           grep -n 'include' "$QWPDH" | head -8
           echo "=== STEP patch-qt END ==="
