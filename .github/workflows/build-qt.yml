@@ -156,6 +156,18 @@ jobs:
           grep -n 'include' "$QWPDH" | head -8
 
           echo ""
+          echo "--- patch 2b: qwindowsprintdevice.cpp force-include qprint_p.h ---"
+          # syncqt runs in build phase (after our STEP 7.5 forward-header creation)
+          # and may overwrite our manually-created forward headers. To be robust,
+          # force-include the source qprint_p.h at the very top of the .cpp file so
+          # QPrint namespace is defined BEFORE qwindowsprintdevice_p.h is parsed.
+          QWPDCPP=/tmp/qtbase/src/printsupport/platform/windows/qwindowsprintdevice.cpp
+          if ! grep -q 'force-include qprint_p.h' "$QWPDCPP"; then
+            sed -i '1i // force-include qprint_p.h (cross-compile syncqt workaround)\n#include "/tmp/qtbase/src/printsupport/kernel/qprint_p.h"' "$QWPDCPP"
+          fi
+          head -10 "$QWPDCPP"
+
+          echo ""
           echo "--- patch 3: qprint_p.h self-includes — use absolute paths ---"
           QPRINT_P=/tmp/qtbase/src/printsupport/kernel/qprint_p.h
           sed -i 's|#include <QtPrintSupport/private/qtprintsupportglobal_p.h>|#include "/tmp/qtbase/src/printsupport/kernel/qtprintsupportglobal_p.h"|' "$QPRINT_P"
