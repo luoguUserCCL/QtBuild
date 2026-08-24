@@ -146,24 +146,22 @@ jobs:
           echo ""
           echo "--- patch 2: qwindowsprintdevice_p.h missing QPrint namespace include ---"
           QWPDH=/tmp/qtbase/src/printsupport/platform/windows/qwindowsprintdevice_p.h
-          # Add explicit include after qplatformprintdevice.h (line 20).
-          # Use relative path to src tree (syncqt forward headers may not be generated
-          # for cross-compile target).
-          if ! grep -q 'kernel/qprint_p.h' "$QWPDH"; then
+          # Use absolute path to source file. Relative path "../../kernel/qprint_p.h"
+          # was applied but did not resolve at compile time (likely PCH/cwd interaction).
+          if ! grep -q '/tmp/qtbase/src/printsupport/kernel/qprint_p.h' "$QWPDH"; then
             sed -i '/QtPrintSupport\/private\/qprint_p.h/d' "$QWPDH"
-            sed -i '20a #include "../../kernel/qprint_p.h"' "$QWPDH"
+            sed -i '/kernel\/qprint_p.h/d' "$QWPDH"
+            sed -i '20a #include "/tmp/qtbase/src/printsupport/kernel/qprint_p.h"' "$QWPDH"
           fi
           grep -n 'include' "$QWPDH" | head -8
 
           echo ""
-          echo "--- patch 3: qprint_p.h self-includes via syncqt forward headers ---"
-          # qprint_p.h itself includes <QtPrintSupport/private/qtprintsupportglobal_p.h>
-          # and <QtPrintSupport/qprinter.h>, which depend on syncqt-generated forward
-          # headers that may not exist for cross-compile target. Replace with same-dir
-          # relative paths.
+          echo "--- patch 3: qprint_p.h self-includes — use absolute paths ---"
           QPRINT_P=/tmp/qtbase/src/printsupport/kernel/qprint_p.h
-          sed -i 's|#include <QtPrintSupport/private/qtprintsupportglobal_p.h>|#include "qtprintsupportglobal_p.h"|' "$QPRINT_P"
-          sed -i 's|#include <QtPrintSupport/qprinter.h>|#include "qprinter.h"|' "$QPRINT_P"
+          sed -i 's|#include <QtPrintSupport/private/qtprintsupportglobal_p.h>|#include "/tmp/qtbase/src/printsupport/kernel/qtprintsupportglobal_p.h"|' "$QPRINT_P"
+          sed -i 's|#include <QtPrintSupport/qprinter.h>|#include "/tmp/qtbase/src/printsupport/kernel/qprinter.h"|' "$QPRINT_P"
+          sed -i 's|#include "qtprintsupportglobal_p.h"|#include "/tmp/qtbase/src/printsupport/kernel/qtprintsupportglobal_p.h"|' "$QPRINT_P"
+          sed -i 's|#include "qprinter.h"|#include "/tmp/qtbase/src/printsupport/kernel/qprinter.h"|' "$QPRINT_P"
           grep -n 'include' "$QPRINT_P" | head -8
           echo "=== STEP patch-qt END ==="
 
