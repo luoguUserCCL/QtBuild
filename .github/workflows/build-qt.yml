@@ -143,6 +143,14 @@ jobs:
           PYEOF
           echo "--- after patch (function body) ---"
           grep -A 4 'function(qt_internal_add_link_flags_no_undefined target)' "$QFH" | head -8
+          echo ""
+          echo "--- patch 2: qwindowsprintdevice_p.h missing QPrint namespace include ---"
+          QWPDH=/tmp/qtbase/src/printsupport/platform/windows/qwindowsprintdevice_p.h
+          # Add explicit include after qplatformprintdevice.h (line 20)
+          if ! grep -q 'QtPrintSupport/private/qprint_p.h' "$QWPDH"; then
+            sed -i '20a #include <QtPrintSupport/private/qprint_p.h>' "$QWPDH"
+          fi
+          grep -n 'include' "$QWPDH" | head -8
           echo "=== STEP patch-qt END ==="
 
       - name: "=== STEP 5 - Host-side configure (for host tools: moc/rcc/uic) ===
