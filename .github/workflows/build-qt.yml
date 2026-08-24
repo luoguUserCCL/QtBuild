@@ -204,6 +204,35 @@ jobs:
           PYEOF
           echo "--- after patch (CONDITION blocks) ---"
           grep -n 'CONDITION' "$PSCMK"
+          echo ""
+
+          echo ""
+          echo "--- patch 5: qwindowswindow.cpp isSoftwareGl() disable dynamicgl branch ---"
+          echo "Root cause: config.summary shows 'Dynamic OpenGL = yes' (Qt auto-detected Windows target)."
+          echo "qwindowswindow.cpp:2519-2526 isSoftwareGl() is wrapped in #if QT_CONFIG(dynamicgl)."
+          echo "The branch references QOpenGLStaticContext::opengl32.moduleIsNotOpengl32() and"
+          echo "QOpenGLContext::openGLModuleType() — but in cross-compile with FEATURE_opengl=OFF,"
+          echo "these classes are only forward-declared, not defined. Patch: change the #if to"
+          echo "#if 0 so the #else branch (return false) is used; Qt then doesn't try to detect"
+          echo "OpenGL driver type at runtime (which is fine for non-GL apps)."
+          QWW=/tmp/qtbase/src/plugins/platforms/windows/qwindowswindow.cpp
+          grep -n 'isSoftwareGl\|QT_CONFIG(dynamicgl)' "$QWW" | head -5
+          python3 - <<'PYEOF'
+          import re
+          p = '/tmp/qtbase/src/plugins/platforms/windows/qwindowswindow.cpp'
+          with open(p) as f: s = f.read()
+          # Match the #if QT_CONFIG(dynamicgl) ... #else block (non-greedy .*? with DOTALL)
+          new = re.sub(
+              r'#if QT_CONFIG\(dynamicgl\)\n.*?\n#else\n',
+              '#if 0  // patched: cross-compile, QOpenGLStaticContext not declared\n#else\n',
+              s, flags=re.DOTALL, count=1)
+          if new == s:
+              print("ERROR: dynamicgl pattern not found in qwindowswindow.cpp"); raise SystemExit(1)
+          with open(p, 'w') as f: f.write(new)
+          print("patched isSoftwareGl() #if QT_CONFIG(dynamicgl) -> #if 0")
+          PYEOF
+          echo "--- after patch (isSoftwareGl) ---"
+          grep -B1 -A8 'isSoftwareGl' "$QWW" | head -15
           echo "=== STEP patch-qt END ==="
 
       - name: "=== STEP 5 - Host-side configure (for host tools: moc/rcc/uic) ===
