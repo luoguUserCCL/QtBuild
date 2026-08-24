@@ -33,6 +33,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build perl python3 pkg-config gperf \
+            g++ \
             zlib1g-dev libpcre2-dev libdouble-conversion-dev \
             libglib2.0-dev libb2-dev libicu-dev libzstd-dev \
             libxkbcommon-dev libxcb1-dev libxcb-cursor0 libxcb-keysyms1 \
@@ -47,8 +48,9 @@ jobs:
           python3 --version
           gperf --version | head -1
           pkg-config --version
+          g++ --version | head -1
           echo "--- which ---"
-          which cmake ninja perl python3 gperf pkg-config
+          which cmake ninja perl python3 gperf pkg-config g++
           echo "=== STEP install-deps END ==="
 
       - name: "=== STEP 2 - Download MinGW toolchain from release ==="
@@ -103,8 +105,6 @@ jobs:
           git log -1
           echo "--- top-level structure ---"
           ls -la | head -20
-          echo "--- .qmake.conf (if any) ---"
-          head -10 .qmake.conf 2>&1 || echo "(no .qmake.conf)"
           echo "--- CMakeLists.txt top ---"
           head -20 CMakeLists.txt
           echo "--- disk usage ---"
@@ -112,16 +112,82 @@ jobs:
           df -h /
           echo "=== STEP clone-qt END ==="
 
-      - name: "=== STEP 5 - CMake configure ==="
+      - name: "=== STEP 5 - Host-side configure (for host tools: moc/rcc/uic) ===
+        Qt 6 cross-compile requires building host-side tools first; QT_HOST_PATH will
+        point at this host build dir during target-side configure."
         run: |
           set -ex
-          echo "=== STEP cmake-configure START ==="
+          echo "=== STEP host-configure START ==="
+          cd /tmp/qtbase
+          cmake -S . -B build-host \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_INSTALL_PREFIX=/tmp/qt-host \
+            -DBUILD_SHARED_LIBS=ON \
+            -DQT_BUILD_TESTS=OFF \
+            -DQT_BUILD_EXAMPLES=OFF \
+            -DQT_BUILD_BENCHMARKS=OFF \
+            -DFEATURE_concurrent=ON \
+            -DFEATURE_thread=ON \
+            -DFEATURE_widgets=ON \
+            -DFEATURE_network=ON \
+            -DFEATURE_sql=ON \
+            -DFEATURE_xml=ON \
+            -DFEATURE_testlib=ON \
+            -DFEATURE_opengl=OFF \
+            -DFEATURE_openssl=OFF \
+            -DFEATURE_vulkan=OFF \
+            -DFEATURE_dbus=OFF \
+            -DFEATURE_libudev=OFF \
+            -DFEATURE_printdialog=OFF \
+            -DFEATURE_printer=OFF \
+            -DFEATURE_pdf=OFF \
+            2>&1 | tee /tmp/host-configure.log
+          HOST_CONF_RC=${PIPESTATUS[0]}
+          echo "--- host-configure exit code: $HOST_CONF_RC ---"
+          grep -E '(Qt version|Qt Companion|Install prefix|Build type|Compiler|Features|CMAKE_|error:|Error|Warning|NOTFOUND)' /tmp/host-configure.log | head -50
+          echo "--- build-host dir contents ---"
+          ls build-host/ | head -10
+          echo "--- build.ninja exists? ---"
+          ls -la build-host/build.ninja
+          df -h /
+          echo "=== STEP host-configure END ==="
+          if [ $HOST_CONF_RC -ne 0 ]; then exit $HOST_CONF_RC; fi
+
+      - name: "=== STEP 6 - Host-side build + install ==="
+        run: |
+          set -ex
+          echo "=== STEP host-build START ==="
+          cd /tmp/qtbase
+          cmake --build build-host --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/host-build.log
+          HOST_BUILD_RC=${PIPESTATUS[0]}
+          echo "--- host-build exit code: $HOST_BUILD_RC ---"
+          tail -30 /tmp/host-build.log
+          echo "--- disk usage after host build ---"
+          du -sh build-host
+          df -h /
+          echo "=== STEP host-build END ==="
+          if [ $HOST_BUILD_RC -ne 0 ]; then exit $HOST_BUILD_RC; fi
+          echo "=== STEP host-install START ==="
+          cmake --install build-host 2>&1 | tee /tmp/host-install.log
+          HOST_INST_RC=${PIPESTATUS[0]}
+          echo "--- host install dir size ---"
+          du -sh /tmp/qt-host
+          ls /tmp/qt-host/bin/ | head -20
+          echo "=== STEP host-install END ==="
+          if [ $HOST_INST_RC -ne 0 ]; then exit $HOST_INST_RC; fi
+
+      - name: "=== STEP 7 - Target-side configure (cross-compile, using host tools) ==="
+        run: |
+          set -ex
+          echo "=== STEP target-configure START ==="
           cd /tmp/qtbase
           cmake -S . -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_INSTALL_PREFIX=/tmp/qt-install \
             -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
             -DBUILD_SHARED_LIBS=ON \
             -DQT_BUILD_TESTS=OFF \
             -DQT_BUILD_EXAMPLES=OFF \
@@ -150,33 +216,34 @@ jobs:
             -DFEATURE_3d=OFF \
             -DINPUT_openssl=no \
             2>&1 | tee /tmp/configure.log
-          echo "--- configure exit code: $? ---"
-          echo "--- configure summary highlights ---"
+          TARGET_CONF_RC=${PIPESTATUS[0]}
+          echo "--- target-configure exit code: $TARGET_CONF_RC ---"
           grep -E '(Qt version|Qt Companion|Install prefix|Build type|Compiler|Features|CMAKE_|error:|Error|Warning|NOTFOUND)' /tmp/configure.log | head -50
-          echo "--- disk usage after configure ---"
-          du -sh /tmp/qtbase/build
+          echo "--- build.ninja exists? ---"
+          ls -la build/build.ninja
           df -h /
-          echo "=== STEP cmake-configure END ==="
+          echo "=== STEP target-configure END ==="
+          if [ $TARGET_CONF_RC -ne 0 ]; then exit $TARGET_CONF_RC; fi
 
-      - name: "=== STEP 6 - Build Qt ==="
+      - name: "=== STEP 8 - Target-side build (cross-compile) ==="
         run: |
           set -ex
-          echo "=== STEP cmake-build START ==="
+          echo "=== STEP target-build START ==="
           cd /tmp/qtbase
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/build.log
           BUILD_RC=${PIPESTATUS[0]}
-          echo "--- build exit code: $BUILD_RC ---"
+          echo "--- target-build exit code: $BUILD_RC ---"
           tail -100 /tmp/build.log
           echo "--- disk usage after build ---"
           du -sh /tmp/qtbase/build
           df -h /
-          echo "=== STEP cmake-build END ==="
+          echo "=== STEP target-build END ==="
           if [ $BUILD_RC -ne 0 ]; then exit $BUILD_RC; fi
 
-      - name: "=== STEP 7 - Install Qt ==="
+      - name: "=== STEP 9 - Target-side install ==="
         run: |
           set -ex
-          echo "=== STEP cmake-install START ==="
+          echo "=== STEP target-install START ==="
           cd /tmp/qtbase
           cmake --install build 2>&1 | tee /tmp/install.log
           INSTALL_RC=${PIPESTATUS[0]}
@@ -191,10 +258,10 @@ jobs:
           ls -la /tmp/qt-install/lib/cmake/ 2>/dev/null | head -20
           echo "--- include (top-level only) ---"
           ls /tmp/qt-install/include/ 2>/dev/null | head -30
-          echo "=== STEP cmake-install END ==="
+          echo "=== STEP target-install END ==="
           if [ $INSTALL_RC -ne 0 ]; then exit $INSTALL_RC; fi
 
-      - name: "=== STEP 8 - Verify with hello Qt program ==="
+      - name: "=== STEP 10 - Verify with hello Qt program ==="
         run: |
           set -ex
           echo "=== STEP verify-qt START ==="
@@ -221,7 +288,7 @@ jobs:
           /opt/mingw-mcf/bin/x86_64-w64-mingw32-objdump -p /tmp/hello.exe | grep -E 'DLL Name|Import' | head -30
           echo "=== STEP verify-qt END ==="
 
-      - name: "=== STEP 9 - Package Qt install dir ==="
+      - name: "=== STEP 11 - Package Qt install dir ==="
         run: |
           set -ex
           echo "=== STEP package START ==="
@@ -238,7 +305,7 @@ jobs:
           cat ${NAME}.tar.xz.sha256
           echo "=== STEP package END ==="
 
-      - name: "=== STEP 10 - Upload Qt tarball artifact ==="
+      - name: "=== STEP 12 - Upload Qt tarball artifact ==="
         uses: actions/upload-artifact@v4
         with:
           name: qt-mingw-mcf-${{ inputs.qt_version }}
@@ -249,12 +316,15 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      - name: "=== STEP 11 - Upload build logs (always, even on failure) ==="
+      - name: "=== STEP 13 - Upload build logs (always, even on failure) ==="
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ inputs.qt_version }}
           path: |
+            /tmp/host-configure.log
+            /tmp/host-build.log
+            /tmp/host-install.log
             /tmp/configure.log
             /tmp/build.log
             /tmp/install.log
