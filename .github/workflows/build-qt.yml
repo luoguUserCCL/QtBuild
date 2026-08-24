@@ -247,6 +247,8 @@ jobs:
             -DFEATURE_pdf=OFF \
             -DFEATURE_designer=OFF \
             -DFEATURE_3d=OFF \
+            -DFEATURE_posix_sem=OFF \
+            -DINPUT_posix_sem=no \
             -DINPUT_openssl=no \
             2>&1 | tee /tmp/configure.log
           TARGET_CONF_RC=${PIPESTATUS[0]}
