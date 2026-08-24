@@ -282,6 +282,7 @@ jobs:
             -DFEATURE_posix_sem=OFF \
             -DINPUT_posix_sem=no \
             -DINPUT_openssl=no \
+            -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
             2>&1 | tee /tmp/configure.log
           TARGET_CONF_RC=${PIPESTATUS[0]}
           echo "--- target-configure exit code: $TARGET_CONF_RC ---"
