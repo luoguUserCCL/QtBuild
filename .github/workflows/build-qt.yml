@@ -112,6 +112,39 @@ jobs:
           df -h /
           echo "=== STEP clone-qt END ==="
 
+      - name: "=== STEP 4.5 - Patch Qt to disable qt_internal_add_link_flags_no_undefined ===
+        Cross-compile try-compile uses STATIC_LIBRARY target type (per toolchain file),
+        which routes via ar. Qt's qt_internal_add_link_flags_no_undefined adds -Wl,--no-undefined
+        to LINK_OPTIONS, which CMake's default CMAKE_*_ARCHIVE_CREATE templates include as
+        <LINK_FLAGS>, causing ar to receive -Wl,--no-undefined and bail with
+        'invalid option -- W'. Toolchain file overrides with CACHE+FORCE did not propagate
+        into try-compile sub-cmake instances. Disabling the function entirely is the
+        cleanest cross-compile workaround; --no-undefined is only an opt-in safety check
+        and is not required for Qt to function correctly."
+        run: |
+          set -ex
+          echo "=== STEP patch-qt START ==="
+          QFH=/tmp/qtbase/cmake/QtFlagHandlingHelpers.cmake
+          echo "--- before patch (function body head) ---"
+          grep -A 5 'function(qt_internal_add_link_flags_no_undefined target)' "$QFH" | head -8
+          # Replace function body with no-op return()
+          python3 - <<'PYEOF'
+          import re
+          p = '/tmp/qtbase/cmake/QtFlagHandlingHelpers.cmake'
+          with open(p) as f: s = f.read()
+          new = re.sub(
+              r'function\(qt_internal_add_link_flags_no_undefined target\)\n.*?\nendfunction\(\)',
+              'function(qt_internal_add_link_flags_no_undefined target)\n    # Patched: no-op for cross-compile (ar cannot accept -Wl,--no-undefined)\n    return()\nendfunction()',
+              s, flags=re.DOTALL, count=1)
+          if new == s:
+              print("ERROR: pattern not found, patch failed"); raise SystemExit(1)
+          with open(p, 'w') as f: f.write(new)
+          print("patched OK")
+          PYEOF
+          echo "--- after patch (function body) ---"
+          grep -A 4 'function(qt_internal_add_link_flags_no_undefined target)' "$QFH" | head -8
+          echo "=== STEP patch-qt END ==="
+
       - name: "=== STEP 5 - Host-side configure (for host tools: moc/rcc/uic) ===
         Qt 6 cross-compile requires building host-side tools first; QT_HOST_PATH will
         point at this host build dir during target-side configure."
