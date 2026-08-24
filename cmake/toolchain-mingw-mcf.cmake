@@ -40,6 +40,18 @@ set(QT_FEATURE_thread ON CACHE BOOL "Enable threading" FORCE)
 # Export all symbols in shared libs (typical Windows behavior)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
+# Override ar command templates to NOT pass LINK_FLAGS to ar.
+# Qt 6's qt_internal_add_link_flags_no_undefined adds -Wl,--no-undefined to
+# LINK_FLAGS, but CMake's default CMAKE_*_ARCHIVE_CREATE templates include
+# <LINK_FLAGS>, causing ar to receive -Wl,--no-undefined and bail with
+# "invalid option -- 'W'". Drop LINK_FLAGS from archive-create commands.
+set(CMAKE_C_ARCHIVE_CREATE       "<CMAKE_AR> qc <TARGET> <OBJECTS>")
+set(CMAKE_CXX_ARCHIVE_CREATE     "<CMAKE_AR> qc <TARGET> <OBJECTS>")
+set(CMAKE_C_ARCHIVE_FINISH       "<CMAKE_RANLIB> <TARGET>")
+set(CMAKE_CXX_ARCHIVE_FINISH     "<CMAKE_RANLIB> <TARGET>")
+set(CMAKE_C_ARCHIVE_APPEND       "<CMAKE_AR> q <TARGET> <OBJECTS>")
+set(CMAKE_CXX_ARCHIVE_APPEND     "<CMAKE_AR> q <TARGET> <OBJECTS>")
+
 # pkg-config: target only, not host
 set(ENV{PKG_CONFIG_PATH}   "${MINGW_SYSROOT}/lib/pkgconfig")
 set(ENV{PKG_CONFIG_LIBDIR} "${MINGW_SYSROOT}/lib/pkgconfig")
