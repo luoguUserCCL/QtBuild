@@ -146,17 +146,25 @@ jobs:
           echo ""
           echo "--- patch 2: qwindowsprintdevice_p.h missing QPrint namespace include ---"
           QWPDH=/tmp/qtbase/src/printsupport/platform/windows/qwindowsprintdevice_p.h
-          # The original include <qpa/qplatformprintdevice.h> is supposed to chain-include
-          # <private/qprint_p.h> where namespace QPrint is defined, but syncqt may not
-          # have generated the QtPrintSupport/private/ forward headers when running
-          # inside cross-compile mode. Add an explicit relative path include as a fallback.
+          # Add explicit include after qplatformprintdevice.h (line 20).
+          # Use relative path to src tree (syncqt forward headers may not be generated
+          # for cross-compile target).
           if ! grep -q 'kernel/qprint_p.h' "$QWPDH"; then
-            # Remove any prior QtPrintSupport/private/qprint_p.h include added by earlier patch
             sed -i '/QtPrintSupport\/private\/qprint_p.h/d' "$QWPDH"
-            # Insert after the qpa/qplatformprintdevice.h include (line 20)
             sed -i '20a #include "../../kernel/qprint_p.h"' "$QWPDH"
           fi
           grep -n 'include' "$QWPDH" | head -8
+
+          echo ""
+          echo "--- patch 3: qprint_p.h self-includes via syncqt forward headers ---"
+          # qprint_p.h itself includes <QtPrintSupport/private/qtprintsupportglobal_p.h>
+          # and <QtPrintSupport/qprinter.h>, which depend on syncqt-generated forward
+          # headers that may not exist for cross-compile target. Replace with same-dir
+          # relative paths.
+          QPRINT_P=/tmp/qtbase/src/printsupport/kernel/qprint_p.h
+          sed -i 's|#include <QtPrintSupport/private/qtprintsupportglobal_p.h>|#include "qtprintsupportglobal_p.h"|' "$QPRINT_P"
+          sed -i 's|#include <QtPrintSupport/qprinter.h>|#include "qprinter.h"|' "$QPRINT_P"
+          grep -n 'include' "$QPRINT_P" | head -8
           echo "=== STEP patch-qt END ==="
 
       - name: "=== STEP 5 - Host-side configure (for host tools: moc/rcc/uic) ===
