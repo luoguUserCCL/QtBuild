@@ -282,6 +282,43 @@ jobs:
           echo "=== STEP target-configure END ==="
           if [ $TARGET_CONF_RC -ne 0 ]; then exit $TARGET_CONF_RC; fi
 
+      - name: "=== STEP 7.5 - Manually create missing syncqt private forward headers ===
+        syncqt may skip generating QtPrintSupport/private/ forward headers during
+        cross-compile configure. Create them manually pointing to src tree so
+        chain-includes like <private/qprint_p.h> resolve to the actual source file."
+        run: |
+          set -ex
+          echo "=== STEP syncqt-forward-fix START ==="
+          PRIVATE_DIR=/tmp/qtbase/build/include/QtPrintSupport/6.11.2/QtPrintSupport/private
+          echo "--- existing forward headers (if any) ---"
+          ls -la $PRIVATE_DIR/ 2>/dev/null | head -20 || echo "(dir missing — will create)"
+          mkdir -p $PRIVATE_DIR
+          echo "--- create/verify forward headers for known printsupport private headers ---"
+          # Map: forward-header-name -> src-path
+          create_forward() {
+            local fname="$1" srcpath="$2"
+            if [ -f "$srcpath" ] && [ ! -f "$PRIVATE_DIR/$fname" ]; then
+              echo "creating forward: $fname -> $srcpath"
+              echo "#include \"$srcpath\"" > "$PRIVATE_DIR/$fname"
+            elif [ -f "$PRIVATE_DIR/$fname" ]; then
+              echo "exists: $fname"
+            else
+              echo "skip (no src): $fname"
+            fi
+          }
+          create_forward qprint_p.h               /tmp/qtbase/src/printsupport/kernel/qprint_p.h
+          create_forward qtprintsupportglobal_p.h /tmp/qtbase/src/printsupport/kernel/qtprintsupportglobal_p.h
+          create_forward qprintdevice_p.h        /tmp/qtbase/src/printsupport/kernel/qprintdevice_p.h
+          create_forward qprintengine_p.h        /tmp/qtbase/src/printsupport/kernel/qprintengine_p.h
+          create_forward qprintengine_pdf_p.h    /tmp/qtbase/src/printsupport/kernel/qprintengine_pdf_p.h
+          create_forward qplatformprintdevice.h  /tmp/qtbase/src/printsupport/kernel/qplatformprintdevice.h
+          create_forward qplatformprintersupport.h /tmp/qtbase/src/printsupport/kernel/qplatformprintersupport.h
+          create_forward qplatformprintplugin.h /tmp/qtbase/src/printsupport/kernel/qplatformprintplugin.h
+          create_forward qprinterinfo_p.h        /tmp/qtbase/src/printsupport/kernel/qprinterinfo_p.h
+          echo "--- final state ---"
+          ls -la $PRIVATE_DIR/
+          echo "=== STEP syncqt-forward-fix END ==="
+
       - name: "=== STEP 8 - Target-side build (cross-compile) ==="
         run: |
           set -ex
