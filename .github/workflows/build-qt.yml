@@ -23,10 +23,10 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: === STEP 0: Checkout workflow repo (gets toolchain file) ===
+      - name: "=== STEP 0 - Checkout workflow repo ==="
         uses: actions/checkout@v4
 
-      - name: === STEP 1: Install build dependencies ===
+      - name: "=== STEP 1 - Install build dependencies ==="
         run: |
           set -ex
           echo "=== STEP install-deps START ==="
@@ -51,7 +51,7 @@ jobs:
           which cmake ninja perl python3 gperf pkg-config
           echo "=== STEP install-deps END ==="
 
-      - name: === STEP 2: Download MinGW toolchain from release ===
+      - name: "=== STEP 2 - Download MinGW toolchain from release ==="
         run: |
           set -ex
           echo "=== STEP download-tc START ==="
@@ -79,12 +79,12 @@ jobs:
           df -h /
           echo "=== STEP download-tc END ==="
 
-      - name: === STEP 3: Add toolchain to PATH ===
+      - name: "=== STEP 3 - Add toolchain to PATH ==="
         run: |
           echo "/opt/mingw-mcf/bin" >> $GITHUB_PATH
-          echo "PATH now: $GITHUB_PATH"
+          echo "PATH updated"
 
-      - name: === STEP 4: Clone Qt base ===
+      - name: "=== STEP 4 - Clone Qt base ==="
         run: |
           set -ex
           echo "=== STEP clone-qt START ==="
@@ -103,7 +103,7 @@ jobs:
           df -h /
           echo "=== STEP clone-qt END ==="
 
-      - name: === STEP 5: CMake configure ===
+      - name: "=== STEP 5 - CMake configure ==="
         run: |
           set -ex
           echo "=== STEP cmake-configure START ==="
@@ -149,12 +149,11 @@ jobs:
           df -h /
           echo "=== STEP cmake-configure END ==="
 
-      - name: === STEP 6: Build Qt ===
+      - name: "=== STEP 6 - Build Qt ==="
         run: |
           set -ex
           echo "=== STEP cmake-build START ==="
           cd /tmp/qtbase
-          # Leave 1 core for system on 4-core runner
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/build.log
           BUILD_RC=${PIPESTATUS[0]}
           echo "--- build exit code: $BUILD_RC ---"
@@ -165,7 +164,7 @@ jobs:
           echo "=== STEP cmake-build END ==="
           if [ $BUILD_RC -ne 0 ]; then exit $BUILD_RC; fi
 
-      - name: === STEP 7: Install Qt ===
+      - name: "=== STEP 7 - Install Qt ==="
         run: |
           set -ex
           echo "=== STEP cmake-install START ==="
@@ -186,14 +185,13 @@ jobs:
           echo "=== STEP cmake-install END ==="
           if [ $INSTALL_RC -ne 0 ]; then exit $INSTALL_RC; fi
 
-      - name: === STEP 8: Verify with hello Qt program ===
+      - name: "=== STEP 8 - Verify with hello Qt program ==="
         run: |
           set -ex
           echo "=== STEP verify-qt START ==="
           cat > /tmp/hello.cpp <<'EOF'
           #include <QCoreApplication>
           #include <iostream>
-          #include <string>
           int main(int argc, char *argv[]) {
               QCoreApplication a(argc, argv);
               std::cout << "Qt on mingw-mcf works!" << std::endl;
@@ -214,13 +212,12 @@ jobs:
           /opt/mingw-mcf/bin/x86_64-w64-mingw32-objdump -p /tmp/hello.exe | grep -E 'DLL Name|Import' | head -30
           echo "=== STEP verify-qt END ==="
 
-      - name: === STEP 9: Package Qt install dir ===
+      - name: "=== STEP 9 - Package Qt install dir ==="
         run: |
           set -ex
           echo "=== STEP package START ==="
           cd /tmp
           QT_TAG="${{ inputs.qt_version }}"
-          # strip leading 'v' if present
           QT_VER="${QT_TAG#v}"
           NAME="qt-mingw-mcf-${QT_VER}"
           echo "Packaging as: $NAME"
@@ -232,7 +229,7 @@ jobs:
           cat ${NAME}.tar.xz.sha256
           echo "=== STEP package END ==="
 
-      - name: === STEP 10: Upload Qt tarball artifact ===
+      - name: "=== STEP 10 - Upload Qt tarball artifact ==="
         uses: actions/upload-artifact@v4
         with:
           name: qt-mingw-mcf-${{ inputs.qt_version }}
@@ -243,7 +240,7 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      - name: === STEP 11: Upload build logs (always, even on failure) ===
+      - name: "=== STEP 11 - Upload build logs (always, even on failure) ==="
         if: always()
         uses: actions/upload-artifact@v4
         with:
