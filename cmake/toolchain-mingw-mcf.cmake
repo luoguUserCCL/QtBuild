@@ -42,15 +42,16 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 # Override ar command templates to NOT pass LINK_FLAGS to ar.
 # Qt 6's qt_internal_add_link_flags_no_undefined adds -Wl,--no-undefined to
-# LINK_FLAGS, but CMake's default CMAKE_*_ARCHIVE_CREATE templates include
-# <LINK_FLAGS>, causing ar to receive -Wl,--no-undefined and bail with
-# "invalid option -- 'W'". Drop LINK_FLAGS from archive-create commands.
-set(CMAKE_C_ARCHIVE_CREATE       "<CMAKE_AR> qc <TARGET> <OBJECTS>")
-set(CMAKE_CXX_ARCHIVE_CREATE     "<CMAKE_AR> qc <TARGET> <OBJECTS>")
-set(CMAKE_C_ARCHIVE_FINISH       "<CMAKE_RANLIB> <TARGET>")
-set(CMAKE_CXX_ARCHIVE_FINISH     "<CMAKE_RANLIB> <TARGET>")
-set(CMAKE_C_ARCHIVE_APPEND       "<CMAKE_AR> q <TARGET> <OBJECTS>")
-set(CMAKE_CXX_ARCHIVE_APPEND     "<CMAKE_AR> q <TARGET> <OBJECTS>")
+# target LINK_OPTIONS (for shared libs). CMake's default CMAKE_*_ARCHIVE_CREATE
+# templates include <LINK_FLAGS>, so static-lib try-compile passes -Wl,--no-undefined
+# to ar, which fails with "invalid option -- 'W'". Drop LINK_FLAGS from
+# archive-create commands using CACHE + FORCE to override CMake's defaults.
+set(CMAKE_C_ARCHIVE_CREATE       "<CMAKE_AR> qc <TARGET> <OBJECTS>" CACHE STRING "C archive create" FORCE)
+set(CMAKE_CXX_ARCHIVE_CREATE     "<CMAKE_AR> qc <TARGET> <OBJECTS>" CACHE STRING "C++ archive create" FORCE)
+set(CMAKE_C_ARCHIVE_FINISH       "<CMAKE_RANLIB> <TARGET>" CACHE STRING "C archive finish" FORCE)
+set(CMAKE_CXX_ARCHIVE_FINISH     "<CMAKE_RANLIB> <TARGET>" CACHE STRING "C++ archive finish" FORCE)
+set(CMAKE_C_ARCHIVE_APPEND       "<CMAKE_AR> q <TARGET> <OBJECTS>" CACHE STRING "C archive append" FORCE)
+set(CMAKE_CXX_ARCHIVE_APPEND     "<CMAKE_AR> q <TARGET> <OBJECTS>" CACHE STRING "C++ archive append" FORCE)
 
 # pkg-config: target only, not host
 set(ENV{PKG_CONFIG_PATH}   "${MINGW_SYSROOT}/lib/pkgconfig")
