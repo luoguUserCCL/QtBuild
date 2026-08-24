@@ -57,15 +57,24 @@ jobs:
           echo "=== STEP download-tc START ==="
           mkdir -p /opt/mingw-mcf /tmp/tc-dl
           cd /tmp/tc-dl
-          wget -q --show-progress \
-            "https://github.com/luoguUserCCL/QtBuild/releases/download/toolchain-v20260701/x86_64-w64-mingw32-ucrt-mcfgthread-gcc-16.1.1-20260701-linux-amd64.tar.xz" \
+          URL_BASE="https://github.com/luoguUserCCL/QtBuild/releases/download/toolchain-v20260701"
+          TC_NAME="x86_64-w64-mingw32-ucrt-mcfgthread-gcc-16.1.1-20260701-linux-amd64"
+          echo "--- downloading ${TC_NAME}.tar.xz (compact dot:giga progress) ---"
+          wget -q --progress=dot:giga \
+            "${URL_BASE}/${TC_NAME}.tar.xz" \
             -O toolchain.tar.xz
-          wget -q --show-progress \
-            "https://github.com/luoguUserCCL/QtBuild/releases/download/toolchain-v20260701/x86_64-w64-mingw32-ucrt-mcfgthread-gcc-16.1.1-20260701-linux-amd64.tar.xz.sha256" \
+          echo "--- downloading sha256 file ---"
+          wget -q --progress=dot:giga \
+            "${URL_BASE}/${TC_NAME}.tar.xz.sha256" \
             -O toolchain.tar.xz.sha256
           ls -la
-          echo "--- sha256 verify ---"
-          sha256sum -c toolchain.tar.xz.sha256
+          echo "--- sha256 verify (compare hashes; we renamed file to toolchain.tar.xz) ---"
+          EXPECTED=$(awk '{print $1}' toolchain.tar.xz.sha256)
+          ACTUAL=$(sha256sum toolchain.tar.xz | awk '{print $1}')
+          echo "expected: $EXPECTED"
+          echo "actual:   $ACTUAL"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then echo "SHA256 MISMATCH"; exit 1; fi
+          echo "SHA256 OK"
           echo "--- extract ---"
           tar -xf toolchain.tar.xz --strip-components=1 -C /opt/mingw-mcf
           echo "--- verify install ---"
