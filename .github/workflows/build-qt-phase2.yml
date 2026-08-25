@@ -430,6 +430,8 @@ jobs:
           git clone --depth 1 --branch "${{ inputs.qt_version }}" \
             https://github.com/qt/qttools.git /tmp/qttools
           cd /tmp/qttools
+          # qttools assistant needs qlitehtml (+ litehtml) submodules
+          git submodule update --init --recursive
           # --- HOST pass first: lrelease/lupdate/qdoc are host tools ---
           cmake -B build-host -S . -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
