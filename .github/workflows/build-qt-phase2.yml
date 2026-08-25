@@ -134,20 +134,23 @@ jobs:
           import re
           p = '/tmp/qtbase/src/plugins/platforms/windows/qwindowswindow.cpp'
           with open(p) as f: s = f.read()
+          # NOTE: comment must be C-style //, NOT '#'. '#if 0  # foo' is a
+          # preprocessor syntax error ("missing binary operator before token '#'",
+          # seen in Phase 2 run #3 at qwindowswindow.cpp:18).
           new = re.sub(
               r'#if QT_CONFIG\(dynamicgl\)\n.*?\n#else\n',
-              '#if 0  # patched: cross-compile, QOpenGLStaticContext not declared\n#else\n',
+              '#if 0 // patched: cross-compile, QOpenGLStaticContext not declared\n#else\n',
               s, flags=re.DOTALL, count=2)
           if new == s:
               print("ERROR: dynamicgl pattern not found"); raise SystemExit(1)
           with open(p, 'w') as f: f.write(new)
-          print(f"patch C OK: {new.count('#if 0  # patched')} occurrences")
+          print(f"patch C OK: {new.count('#if 0 // patched')} occurrences")
           PYEOF
 
           echo "--- verify patches ---"
           grep -c 'Patched: no-op' /tmp/qtbase/cmake/QtFlagHandlingHelpers.cmake
           grep -c 'CONDITION FALSE' /tmp/qtbase/src/printsupport/CMakeLists.txt
-          grep -c '#if 0  # patched' /tmp/qtbase/src/plugins/platforms/windows/qwindowswindow.cpp
+          grep -c '#if 0 // patched' /tmp/qtbase/src/plugins/platforms/windows/qwindowswindow.cpp
           echo "=== STEP patch-qt END ==="
 
       - name: "=== STEP 5 - Host-side configure (build tools: moc/rcc/uic) ==="
