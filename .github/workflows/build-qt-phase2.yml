@@ -305,15 +305,22 @@ jobs:
             https://github.com/qt/qtshadertools.git /tmp/qtshadertools
           cd /tmp/qtshadertools
           /tmp/qt-install/bin/qt-cmake-private \
+            -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
             -DQT_HOST_PATH=/tmp/qt-host \
-            . build \
+            . \
             2>&1 | tee /tmp/shadertools-configure.log
+          CONF_RC=${PIPESTATUS[0]}
+          if [ $CONF_RC -ne 0 ]; then echo "shadertools configure FAILED rc=$CONF_RC"; tail -40 /tmp/shadertools-configure.log; exit $CONF_RC; fi
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/shadertools-build.log
+          BUILD_RC=${PIPESTATUS[0]}
+          if [ $BUILD_RC -ne 0 ]; then echo "shadertools build FAILED rc=$BUILD_RC"; tail -40 /tmp/shadertools-build.log; exit $BUILD_RC; fi
           cmake --install build 2>&1 | tee /tmp/shadertools-install.log
-          echo "shadertools rc=$?"
+          INST_RC=${PIPESTATUS[0]}
+          if [ $INST_RC -ne 0 ]; then echo "shadertools install FAILED rc=$INST_RC"; exit $INST_RC; fi
+          echo "shadertools OK"
           du -sh /tmp/qt-install
           df -h /
 
@@ -324,15 +331,22 @@ jobs:
             https://github.com/qt/qtdeclarative.git /tmp/qtdeclarative
           cd /tmp/qtdeclarative
           /tmp/qt-install/bin/qt-cmake-private \
+            -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
             -DQT_HOST_PATH=/tmp/qt-host \
-            . build \
+            . \
             2>&1 | tee /tmp/declarative-configure.log
+          CONF_RC=${PIPESTATUS[0]}
+          if [ $CONF_RC -ne 0 ]; then echo "declarative configure FAILED rc=$CONF_RC"; tail -40 /tmp/declarative-configure.log; exit $CONF_RC; fi
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/declarative-build.log
+          BUILD_RC=${PIPESTATUS[0]}
+          if [ $BUILD_RC -ne 0 ]; then echo "declarative build FAILED rc=$BUILD_RC"; tail -40 /tmp/declarative-build.log; exit $BUILD_RC; fi
           cmake --install build 2>&1 | tee /tmp/declarative-install.log
-          echo "declarative rc=$?"
+          INST_RC=${PIPESTATUS[0]}
+          if [ $INST_RC -ne 0 ]; then echo "declarative install FAILED rc=$INST_RC"; exit $INST_RC; fi
+          echo "declarative OK"
           du -sh /tmp/qt-install
           df -h /
 
@@ -343,15 +357,22 @@ jobs:
             https://github.com/qt/qtsvg.git /tmp/qtsvg
           cd /tmp/qtsvg
           /tmp/qt-install/bin/qt-cmake-private \
+            -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
             -DQT_HOST_PATH=/tmp/qt-host \
-            . build \
+            . \
             2>&1 | tee /tmp/svg-configure.log
+          CONF_RC=${PIPESTATUS[0]}
+          if [ $CONF_RC -ne 0 ]; then echo "svg configure FAILED rc=$CONF_RC"; tail -40 /tmp/svg-configure.log; exit $CONF_RC; fi
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/svg-build.log
+          BUILD_RC=${PIPESTATUS[0]}
+          if [ $BUILD_RC -ne 0 ]; then echo "svg build FAILED rc=$BUILD_RC"; tail -40 /tmp/svg-build.log; exit $BUILD_RC; fi
           cmake --install build 2>&1 | tee /tmp/svg-install.log
-          echo "svg rc=$?"
+          INST_RC=${PIPESTATUS[0]}
+          if [ $INST_RC -ne 0 ]; then echo "svg install FAILED rc=$INST_RC"; exit $INST_RC; fi
+          echo "svg OK"
           du -sh /tmp/qt-install
           df -h /
 
@@ -362,15 +383,22 @@ jobs:
             https://github.com/qt/qtimageformats.git /tmp/qtimageformats
           cd /tmp/qtimageformats
           /tmp/qt-install/bin/qt-cmake-private \
+            -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
             -DQT_HOST_PATH=/tmp/qt-host \
-            . build \
+            . \
             2>&1 | tee /tmp/imageformats-configure.log
+          CONF_RC=${PIPESTATUS[0]}
+          if [ $CONF_RC -ne 0 ]; then echo "imageformats configure FAILED rc=$CONF_RC"; tail -40 /tmp/imageformats-configure.log; exit $CONF_RC; fi
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/imageformats-build.log
+          BUILD_RC=${PIPESTATUS[0]}
+          if [ $BUILD_RC -ne 0 ]; then echo "imageformats build FAILED rc=$BUILD_RC"; tail -40 /tmp/imageformats-build.log; exit $BUILD_RC; fi
           cmake --install build 2>&1 | tee /tmp/imageformats-install.log
-          echo "imageformats rc=$?"
+          INST_RC=${PIPESTATUS[0]}
+          if [ $INST_RC -ne 0 ]; then echo "imageformats install FAILED rc=$INST_RC"; exit $INST_RC; fi
+          echo "imageformats OK"
           du -sh /tmp/qt-install
           df -h /
 
@@ -381,15 +409,22 @@ jobs:
             https://github.com/qt/qttools.git /tmp/qttools
           cd /tmp/qttools
           /tmp/qt-install/bin/qt-cmake-private \
+            -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
             -DQT_HOST_PATH=/tmp/qt-host \
-            . build \
+            . \
             2>&1 | tee /tmp/tools-configure.log
+          CONF_RC=${PIPESTATUS[0]}
+          if [ $CONF_RC -ne 0 ]; then echo "tools configure FAILED rc=$CONF_RC"; tail -40 /tmp/tools-configure.log; exit $CONF_RC; fi
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/tools-build.log
+          BUILD_RC=${PIPESTATUS[0]}
+          if [ $BUILD_RC -ne 0 ]; then echo "tools build FAILED rc=$BUILD_RC"; tail -40 /tmp/tools-build.log; exit $BUILD_RC; fi
           cmake --install build 2>&1 | tee /tmp/tools-install.log
-          echo "tools rc=$?"
+          INST_RC=${PIPESTATUS[0]}
+          if [ $INST_RC -ne 0 ]; then echo "tools install FAILED rc=$INST_RC"; exit $INST_RC; fi
+          echo "tools OK"
           du -sh /tmp/qt-install
           df -h /
 
@@ -400,29 +435,43 @@ jobs:
             https://github.com/qt/qttranslations.git /tmp/qttranslations
           cd /tmp/qttranslations
           /tmp/qt-install/bin/qt-cmake-private \
+            -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
             -DQT_HOST_PATH=/tmp/qt-host \
-            . build \
+            . \
             2>&1 | tee /tmp/translations-configure.log
+          CONF_RC=${PIPESTATUS[0]}
+          if [ $CONF_RC -ne 0 ]; then echo "translations configure FAILED rc=$CONF_RC"; tail -40 /tmp/translations-configure.log; exit $CONF_RC; fi
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/translations-build.log
+          BUILD_RC=${PIPESTATUS[0]}
+          if [ $BUILD_RC -ne 0 ]; then echo "translations build FAILED rc=$BUILD_RC"; tail -40 /tmp/translations-build.log; exit $BUILD_RC; fi
           cmake --install build 2>&1 | tee /tmp/translations-install.log
-          echo "translations rc=$?"
+          INST_RC=${PIPESTATUS[0]}
+          if [ $INST_RC -ne 0 ]; then echo "translations install FAILED rc=$INST_RC"; exit $INST_RC; fi
+          echo "translations OK"
 
           git clone --depth 1 --branch "${{ inputs.qt_version }}" \
             https://github.com/qt/qt5compat.git /tmp/qt5compat
           cd /tmp/qt5compat
           /tmp/qt-install/bin/qt-cmake-private \
+            -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
             -DQT_HOST_PATH=/tmp/qt-host \
-            . build \
+            . \
             2>&1 | tee /tmp/qt5compat-configure.log
+          CONF_RC=${PIPESTATUS[0]}
+          if [ $CONF_RC -ne 0 ]; then echo "qt5compat configure FAILED rc=$CONF_RC"; tail -40 /tmp/qt5compat-configure.log; exit $CONF_RC; fi
           cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/qt5compat-build.log
+          BUILD_RC=${PIPESTATUS[0]}
+          if [ $BUILD_RC -ne 0 ]; then echo "qt5compat build FAILED rc=$BUILD_RC"; tail -40 /tmp/qt5compat-build.log; exit $BUILD_RC; fi
           cmake --install build 2>&1 | tee /tmp/qt5compat-install.log
-          echo "qt5compat rc=$?"
+          INST_RC=${PIPESTATUS[0]}
+          if [ $INST_RC -ne 0 ]; then echo "qt5compat install FAILED rc=$INST_RC"; exit $INST_RC; fi
+          echo "qt5compat OK"
           du -sh /tmp/qt-install
           df -h /
 
