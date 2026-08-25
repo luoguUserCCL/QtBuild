@@ -22,12 +22,24 @@ set(CMAKE_DLLTOOL        ${MINGW_PREFIX}/x86_64-w64-mingw32-dlltool CACHE FILEPA
 set(CMAKE_OBJDUMP        ${MINGW_PREFIX}/x86_64-w64-mingw32-objdump CACHE FILEPATH "objdump")
 
 # Where target libs / headers live
-set(CMAKE_FIND_ROOT_PATH ${MINGW_SYSROOT})
+# Phase 2: include both the MinGW sysroot AND the user-provided deps prefix
+# (/opt/qt-deps with OpenSSL/ICU/PCRE2/zlib/Brotli/... headers+libs).
+# CMAKE_FIND_ROOT_PATH_MODE_LIBRARY/INCLUDE are ONLY, so any prefix that
+# should be searchable must be listed here, otherwise find_path/find_library
+# never look outside the sysroot and every system-lib detection fails
+# (WrapSystemZLIB_FOUND / ICU_FOUND / WrapSystemPCRE2_FOUND = FALSE etc).
+set(CMAKE_FIND_ROOT_PATH ${MINGW_SYSROOT} /opt/qt-deps)
+
+# Tell CMake's find modules about the deps prefix too (some use these hints)
+set(OPENSSL_ROOT_DIR         /opt/qt-deps CACHE PATH "OpenSSL root")
+set(ICU_ROOT                 /opt/qt-deps CACHE PATH "ICU root")
+set(PCRE2_INCLUDE_DIR        /opt/qt-deps/include CACHE PATH "PCRE2 includes")
+set(ZLIB_ROOT                /opt/qt-deps CACHE PATH "ZLIB root")
 
 # Search behavior
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)   # host tools (moc, rcc, etc.) — use host
-set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)   # target libs — only sysroot
-set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)   # target headers — only sysroot
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)   # target libs — sysroot + deps only
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)   # target headers — sysroot + deps only
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # Don't try to run target executables during configure (we're cross-compiling)
@@ -53,6 +65,6 @@ set(CMAKE_CXX_ARCHIVE_FINISH     "<CMAKE_RANLIB> <TARGET>" CACHE STRING "C++ arc
 set(CMAKE_C_ARCHIVE_APPEND       "<CMAKE_AR> q <TARGET> <OBJECTS>" CACHE STRING "C archive append" FORCE)
 set(CMAKE_CXX_ARCHIVE_APPEND     "<CMAKE_AR> q <TARGET> <OBJECTS>" CACHE STRING "C++ archive append" FORCE)
 
-# pkg-config: target only, not host
-set(ENV{PKG_CONFIG_PATH}   "${MINGW_SYSROOT}/lib/pkgconfig")
-set(ENV{PKG_CONFIG_LIBDIR} "${MINGW_SYSROOT}/lib/pkgconfig")
+# pkg-config: target only, not host; include deps prefix
+set(ENV{PKG_CONFIG_PATH}   "/opt/qt-deps/lib/pkgconfig:${MINGW_SYSROOT}/lib/pkgconfig")
+set(ENV{PKG_CONFIG_LIBDIR} "/opt/qt-deps/lib/pkgconfig:${MINGW_SYSROOT}/lib/pkgconfig")
