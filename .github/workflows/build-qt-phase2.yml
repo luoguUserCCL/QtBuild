@@ -304,6 +304,23 @@ jobs:
           git clone --depth 1 --branch "${{ inputs.qt_version }}" \
             https://github.com/qt/qtshadertools.git /tmp/qtshadertools
           cd /tmp/qtshadertools
+          # --- HOST pass first: qsb is a host tool needed by target build ---
+          cmake -B build-host -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_PREFIX_PATH=/tmp/qt-host \
+            -DCMAKE_INSTALL_PREFIX=/tmp/qt-host \
+            -DQT_BUILD_TESTS=OFF -DQT_BUILD_EXAMPLES=OFF \
+            2>&1 | tee /tmp/shadertools-host-configure.log
+          HCONF_RC=${PIPESTATUS[0]}
+          if [ $HCONF_RC -ne 0 ]; then echo "shadertools HOST configure FAILED"; tail -30 /tmp/shadertools-host-configure.log; exit $HCONF_RC; fi
+          cmake --build build-host --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/shadertools-host-build.log
+          HBUILD_RC=${PIPESTATUS[0]}
+          if [ $HBUILD_RC -ne 0 ]; then echo "shadertools HOST build FAILED"; tail -30 /tmp/shadertools-host-build.log; exit $HBUILD_RC; fi
+          cmake --install build-host 2>&1 | tee /tmp/shadertools-host-install.log
+          HINST_RC=${PIPESTATUS[0]}
+          if [ $HINST_RC -ne 0 ]; then echo "shadertools HOST install FAILED"; exit $HINST_RC; fi
+          echo "shadertools HOST OK: $(ls /tmp/qt-host/bin/qsb*)"
+          # --- TARGET pass ---
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
@@ -327,6 +344,23 @@ jobs:
           git clone --depth 1 --branch "${{ inputs.qt_version }}" \
             https://github.com/qt/qtdeclarative.git /tmp/qtdeclarative
           cd /tmp/qtdeclarative
+          # --- HOST pass first: qmlcachegen/qmltyperegistrar are host tools ---
+          cmake -B build-host -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_PREFIX_PATH=/tmp/qt-host \
+            -DCMAKE_INSTALL_PREFIX=/tmp/qt-host \
+            -DQT_BUILD_TESTS=OFF -DQT_BUILD_EXAMPLES=OFF \
+            2>&1 | tee /tmp/declarative-host-configure.log
+          HCONF_RC=${PIPESTATUS[0]}
+          if [ $HCONF_RC -ne 0 ]; then echo "declarative HOST configure FAILED"; tail -30 /tmp/declarative-host-configure.log; exit $HCONF_RC; fi
+          cmake --build build-host --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/declarative-host-build.log
+          HBUILD_RC=${PIPESTATUS[0]}
+          if [ $HBUILD_RC -ne 0 ]; then echo "declarative HOST build FAILED"; tail -30 /tmp/declarative-host-build.log; exit $HBUILD_RC; fi
+          cmake --install build-host 2>&1 | tee /tmp/declarative-host-install.log
+          HINST_RC=${PIPESTATUS[0]}
+          if [ $HINST_RC -ne 0 ]; then echo "declarative HOST install FAILED"; exit $HINST_RC; fi
+          echo "declarative HOST OK: $(ls /tmp/qt-host/bin/qmlcachegen* 2>/dev/null || echo no-qmlcachegen)"
+          # --- TARGET pass ---
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
@@ -396,6 +430,23 @@ jobs:
           git clone --depth 1 --branch "${{ inputs.qt_version }}" \
             https://github.com/qt/qttools.git /tmp/qttools
           cd /tmp/qttools
+          # --- HOST pass first: lrelease/lupdate/qdoc are host tools ---
+          cmake -B build-host -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_PREFIX_PATH=/tmp/qt-host \
+            -DCMAKE_INSTALL_PREFIX=/tmp/qt-host \
+            -DQT_BUILD_TESTS=OFF -DQT_BUILD_EXAMPLES=OFF \
+            2>&1 | tee /tmp/tools-host-configure.log
+          HCONF_RC=${PIPESTATUS[0]}
+          if [ $HCONF_RC -ne 0 ]; then echo "tools HOST configure FAILED"; tail -30 /tmp/tools-host-configure.log; exit $HCONF_RC; fi
+          cmake --build build-host --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/tools-host-build.log
+          HBUILD_RC=${PIPESTATUS[0]}
+          if [ $HBUILD_RC -ne 0 ]; then echo "tools HOST build FAILED"; tail -30 /tmp/tools-host-build.log; exit $HBUILD_RC; fi
+          cmake --install build-host 2>&1 | tee /tmp/tools-host-install.log
+          HINST_RC=${PIPESTATUS[0]}
+          if [ $HINST_RC -ne 0 ]; then echo "tools HOST install FAILED"; exit $HINST_RC; fi
+          echo "tools HOST OK: $(ls /tmp/qt-host/bin/lrelease* 2>/dev/null || echo no-lrelease)"
+          # --- TARGET pass ---
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
@@ -537,6 +588,7 @@ jobs:
             /tmp/install.log
             /tmp/shadertools-*.log
             /tmp/declarative-*.log
+            /tmp/tools-*.log
             /tmp/svg-*.log
             /tmp/imageformats-*.log
             /tmp/tools-*.log
