@@ -1,0 +1,506 @@
+name: Build Qt Phase 2 (full stack with deps)
+
+on:
+  workflow_dispatch:
+    inputs:
+      qt_version:
+        description: 'Qt tag (e.g. v6.11.2)'
+        default: 'v6.11.2'
+        type: string
+      build_type:
+        description: 'CMAKE_BUILD_TYPE'
+        default: 'Release'
+        type: choice
+        options: ['Release', 'RelWithDebInfo', 'Debug']
+      build_parallel:
+        description: 'Ninja parallelism'
+        default: '4'
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: "=== STEP 0 - Checkout workflow repo ==="
+        uses: actions/checkout@v4
+
+      - name: "=== STEP 1 - Install build dependencies ==="
+        run: |
+          set -ex
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build perl python3 pkg-config gperf \
+            g++ \
+            zlib1g-dev libpcre2-dev libdouble-conversion-dev \
+            libglib2.0-dev libb2-dev \
+            libxkbcommon-dev libxcb1-dev libxcb-cursor0 libxcb-keysyms1 \
+            libxcb-icccm4 libxcb-image0 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-sync1 libxcb-xfixes0 libxcb-xkb1 libxcb-util1 \
+            libgl1-mesa-dev libglu1-mesa-dev libegl1-mesa-dev \
+            libfreetype-dev libfontconfig1-dev libharfbuzz-dev
+          echo "--- versions ---"
+          cmake --version | head -1
+          ninja --version
+          perl --version | head -2
+          python3 --version
+          df -h /
+
+      - name: "=== STEP 2 - Download MinGW toolchain + deps from releases ==="
+        run: |
+          set -ex
+          echo "=== STEP download START ==="
+          mkdir -p /opt/mingw-mcf /opt/qt-deps /tmp/tc-dl
+          cd /tmp/tc-dl
+
+          echo "--- downloading toolchain ---"
+          TC_URL_BASE="https://github.com/luoguUserCCL/QtBuild/releases/download/toolchain-v20260701"
+          TC_NAME="x86_64-w64-mingw32-ucrt-mcfgthread-gcc-16.1.1-20260701-linux-amd64"
+          wget -q --progress=dot:giga "${TC_URL_BASE}/${TC_NAME}.tar.xz" -O toolchain.tar.xz
+          wget -q --progress=dot:giga "${TC_URL_BASE}/${TC_NAME}.tar.xz.sha256" -O toolchain.tar.xz.sha256
+          EXPECTED=$(awk '{print $1}' toolchain.tar.xz.sha256)
+          ACTUAL=$(sha256sum toolchain.tar.xz | awk '{print $1}')
+          echo "expected: $EXPECTED"
+          echo "actual:   $ACTUAL"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then echo "SHA256 MISMATCH (toolchain)"; exit 1; fi
+          tar -xf toolchain.tar.xz --strip-components=1 -C /opt/mingw-mcf
+          /opt/mingw-mcf/bin/x86_64-w64-mingw32-gcc -v 2>&1 | grep -E 'Thread model|^gcc version|Target:'
+          du -sh /opt/mingw-mcf
+
+          echo "--- downloading deps ---"
+          DEPS_URL="https://github.com/luoguUserCCL/QtBuild/releases/download/deps-v1/qt-deps-mingw.tar.xz"
+          wget -q --progress=dot:giga "$DEPS_URL" -O deps.tar.xz
+          tar -xf deps.tar.xz -C /opt
+          ls /opt/qt-deps/
+          echo "--- deps inventory ---"
+          ls /opt/qt-deps/include/
+          ls /opt/qt-deps/lib/ | head -20
+          echo "--- openssl version ---"
+          grep OPENSSL_VERSION_STR /opt/qt-deps/include/openssl/opensslv.h | head -2
+          df -h /
+          echo "=== STEP download END ==="
+
+      - name: "=== STEP 3 - Add toolchain to PATH ==="
+        run: |
+          echo "/opt/mingw-mcf/bin" >> $GITHUB_PATH
+          echo "PATH updated"
+
+      - name: "=== STEP 4 - Clone qtbase ==="
+        run: |
+          set -ex
+          git clone --depth 1 --branch "${{ inputs.qt_version }}" \
+            https://github.com/qt/qtbase.git /tmp/qtbase
+          cd /tmp/qtbase
+          git log -1
+          du -sh /tmp/qtbase
+          df -h /
+
+      - name: "=== STEP 4.5 - Patch qtbase (Phase 1 proven patches) ==="
+        run: |
+          set -ex
+          echo "=== STEP patch-qt START ==="
+
+          # --- Patch A: qt_internal_add_link_flags_no_undefined no-op ---
+          python3 - <<'PYEOF'
+          import re
+          p = '/tmp/qtbase/cmake/QtFlagHandlingHelpers.cmake'
+          with open(p) as f: s = f.read()
+          new = re.sub(
+              r'function\(qt_internal_add_link_flags_no_undefined target\)\n.*?\nendfunction\(\)',
+              'function(qt_internal_add_link_flags_no_undefined target)\n    # Patched: no-op for cross-compile (ar cannot accept -Wl,--no-undefined)\n    return()\nendfunction()',
+              s, flags=re.DOTALL, count=1)
+          if new == s:
+              print("ERROR: pattern not found, patch failed"); raise SystemExit(1)
+          with open(p, 'w') as f: f.write(new)
+          print("patch A OK")
+          PYEOF
+
+          # --- Patch B: disable WIN32 PrintSupport block ---
+          python3 - <<'PYEOF'
+          p = '/tmp/qtbase/src/printsupport/CMakeLists.txt'
+          with open(p) as f: s = f.read()
+          new = s.replace(
+              'qt_internal_extend_target(PrintSupport CONDITION WIN32',
+              'qt_internal_extend_target(PrintSupport CONDITION FALSE  # patched: WIN32 printsupport cross-compile workaround')
+          if new == s:
+              print("ERROR: WIN32 CONDITION not found"); raise SystemExit(1)
+          with open(p, 'w') as f: f.write(new)
+          print("patch B OK")
+          PYEOF
+
+          # --- Patch C: qwindowswindow.cpp both #if QT_CONFIG(dynamicgl) -> #if 0 ---
+          python3 - <<'PYEOF'
+          import re
+          p = '/tmp/qtbase/src/plugins/platforms/windows/qwindowswindow.cpp'
+          with open(p) as f: s = f.read()
+          new = re.sub(
+              r'#if QT_CONFIG\(dynamicgl\)\n.*?\n#else\n',
+              '#if 0  # patched: cross-compile, QOpenGLStaticContext not declared\n#else\n',
+              s, flags=re.DOTALL, count=2)
+          if new == s:
+              print("ERROR: dynamicgl pattern not found"); raise SystemExit(1)
+          with open(p, 'w') as f: f.write(new)
+          print(f"patch C OK: {new.count('#if 0  # patched')} occurrences")
+          PYEOF
+
+          echo "--- verify patches ---"
+          grep -c 'Patched: no-op' /tmp/qtbase/cmake/QtFlagHandlingHelpers.cmake
+          grep -c 'CONDITION FALSE' /tmp/qtbase/src/printsupport/CMakeLists.txt
+          grep -c '#if 0  # patched' /tmp/qtbase/src/plugins/platforms/windows/qwindowswindow.cpp
+          echo "=== STEP patch-qt END ==="
+
+      - name: "=== STEP 5 - Host-side configure (build tools: moc/rcc/uic) ==="
+        run: |
+          set -ex
+          cd /tmp/qtbase
+          cmake -S . -B build-host \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_INSTALL_PREFIX=/tmp/qt-host \
+            -DBUILD_SHARED_LIBS=ON \
+            -DQT_BUILD_TESTS=OFF \
+            -DQT_BUILD_EXAMPLES=OFF \
+            -DQT_BUILD_BENCHMARKS=OFF \
+            -DFEATURE_concurrent=ON \
+            -DFEATURE_thread=ON \
+            -DFEATURE_widgets=ON \
+            -DFEATURE_network=ON \
+            -DFEATURE_sql=ON \
+            -DFEATURE_xml=ON \
+            -DFEATURE_testlib=ON \
+            -DFEATURE_opengl=OFF \
+            -DFEATURE_openssl=OFF \
+            -DFEATURE_vulkan=OFF \
+            -DFEATURE_dbus=OFF \
+            -DFEATURE_libudev=OFF \
+            -DFEATURE_printdialog=OFF \
+            -DFEATURE_pdf=OFF \
+            2>&1 | tee /tmp/host-configure.log
+          echo "host-configure rc=${PIPESTATUS[0]}"
+          df -h /
+
+      - name: "=== STEP 6 - Host-side build + install ==="
+        run: |
+          set -ex
+          cd /tmp/qtbase
+          cmake --build build-host --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/host-build.log
+          echo "host-build rc=${PIPESTATUS[0]}"
+          cmake --install build-host 2>&1 | tee /tmp/host-install.log
+          echo "host-install rc=${PIPESTATUS[0]}"
+          du -sh /tmp/qt-host
+          ls /tmp/qt-host/bin/ | head -20
+          df -h /
+
+      - name: "=== STEP 7 - Target-side configure (WITH OpenGL + OpenSSL + ICU) ==="
+        run: |
+          set -ex
+          cd /tmp/qtbase
+          export PKG_CONFIG_PATH=/opt/qt-deps/lib/pkgconfig
+          export PKG_CONFIG_LIBDIR=/opt/qt-deps/lib/pkgconfig
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_INSTALL_PREFIX=/tmp/qt-install \
+            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
+            -DBUILD_SHARED_LIBS=ON \
+            -DQT_BUILD_TESTS=OFF \
+            -DQT_BUILD_EXAMPLES=OFF \
+            -DQT_BUILD_BENCHMARKS=OFF \
+            -DQT_BUILD_MANUAL_TESTS=OFF \
+            -DFEATURE_concurrent=ON \
+            -DFEATURE_thread=ON \
+            -DFEATURE_future=ON \
+            -DFEATURE_widgets=ON \
+            -DFEATURE_network=ON \
+            -DFEATURE_sql=ON \
+            -DFEATURE_sqlmodel=ON \
+            -DFEATURE_xml=ON \
+            -DFEATURE_testlib=ON \
+            -DFEATURE_opengl=ON \
+            -DFEATURE_opengl_desktop=ON \
+            -DFEATURE_dynamicgl=ON \
+            -DFEATURE_openssl=ON \
+            -DFEATURE_openssl_runtime=ON \
+            -DINPUT_openssl=yes \
+            -DFEATURE_icu=ON \
+            -DFEATURE_pcre2=ON \
+            -DFEATURE_system_pcre2=ON \
+            -DFEATURE_zlib=ON \
+            -DFEATURE_system_zlib=ON \
+            -DFEATURE_sql_sqlite=ON \
+            -DFEATURE_system_sqlite=ON \
+            -DFEATURE_brotli=ON \
+            -DFEATURE_vulkan=OFF \
+            -DFEATURE_dbus=OFF \
+            -DFEATURE_libudev=OFF \
+            -DFEATURE_printdialog=OFF \
+            -DFEATURE_pdf=OFF \
+            -DFEATURE_posix_sem=OFF \
+            -DINPUT_posix_sem=no \
+            -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
+            -DCMAKE_PREFIX_PATH=/opt/qt-deps \
+            2>&1 | tee /tmp/configure.log
+          RC=${PIPESTATUS[0]}
+          echo "target-configure rc=$RC"
+          echo "--- config summary (key features) ---"
+          cat /tmp/qtbase/build/config.summary | tee /tmp/config-summary.log
+          ls -la /tmp/qtbase/build/build.ninja
+          df -h /
+          if [ $RC -ne 0 ]; then exit $RC; fi
+
+      - name: "=== STEP 7.5 - Manually create missing syncqt private forward headers ==="
+        run: |
+          set -ex
+          PRIVATE_DIR=/tmp/qtbase/build/include/QtPrintSupport/6.11.2/QtPrintSupport/private
+          mkdir -p $PRIVATE_DIR
+          create_forward() {
+            local fname="$1" srcpath="$2"
+            if [ -f "$srcpath" ] && [ ! -f "$PRIVATE_DIR/$fname" ]; then
+              echo "creating forward: $fname"
+              echo "#include \"$srcpath\"" > "$PRIVATE_DIR/$fname"
+            fi
+          }
+          create_forward qprint_p.h               /tmp/qtbase/src/printsupport/kernel/qprint_p.h
+          create_forward qtprintsupportglobal_p.h /tmp/qtbase/src/printsupport/kernel/qtprintsupportglobal_p.h
+          create_forward qprintdevice_p.h        /tmp/qtbase/src/printsupport/kernel/qprintdevice_p.h
+          create_forward qprintengine_p.h        /tmp/qtbase/src/printsupport/kernel/qprintengine_p.h
+          create_forward qprintengine_pdf_p.h    /tmp/qtbase/src/printsupport/kernel/qprintengine_pdf_p.h
+          create_forward qplatformprintdevice.h  /tmp/qtbase/src/printsupport/kernel/qplatformprintdevice.h
+          create_forward qplatformprintersupport.h /tmp/qtbase/src/printsupport/kernel/qplatformprintersupport.h
+          create_forward qplatformprintplugin.h /tmp/qtbase/src/printsupport/kernel/qplatformprintplugin.h
+          create_forward qprinterinfo_p.h        /tmp/qtbase/src/printsupport/kernel/qprinterinfo_p.h
+          ls -la $PRIVATE_DIR/ | head -12
+
+      - name: "=== STEP 8 - Target-side build qtbase ==="
+        run: |
+          set -ex
+          cd /tmp/qtbase
+          cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/build.log
+          RC=${PIPESTATUS[0]}
+          echo "target-build rc=$RC"
+          tail -5 /tmp/build.log
+          du -sh /tmp/qtbase/build
+          df -h /
+          if [ $RC -ne 0 ]; then exit $RC; fi
+
+      - name: "=== STEP 9 - Install qtbase ==="
+        run: |
+          set -ex
+          cd /tmp/qtbase
+          cmake --install build 2>&1 | tee /tmp/install.log
+          echo "install rc=${PIPESTATUS[0]}"
+          du -sh /tmp/qt-install
+          ls /tmp/qt-install/bin/ | head
+          df -h /
+
+      - name: "=== STEP 10 - Clone + build qtshadertools ==="
+        run: |
+          set -ex
+          git clone --depth 1 --branch "${{ inputs.qt_version }}" \
+            https://github.com/qt/qtshadertools.git /tmp/qtshadertools
+          cd /tmp/qtshadertools
+          /tmp/qt-install/bin/qt-cmake-private \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
+            . build \
+            2>&1 | tee /tmp/shadertools-configure.log
+          cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/shadertools-build.log
+          cmake --install build 2>&1 | tee /tmp/shadertools-install.log
+          echo "shadertools rc=$?"
+          du -sh /tmp/qt-install
+          df -h /
+
+      - name: "=== STEP 11 - Clone + build qtdeclarative (QML/Quick) ==="
+        run: |
+          set -ex
+          git clone --depth 1 --branch "${{ inputs.qt_version }}" \
+            https://github.com/qt/qtdeclarative.git /tmp/qtdeclarative
+          cd /tmp/qtdeclarative
+          /tmp/qt-install/bin/qt-cmake-private \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
+            . build \
+            2>&1 | tee /tmp/declarative-configure.log
+          cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/declarative-build.log
+          cmake --install build 2>&1 | tee /tmp/declarative-install.log
+          echo "declarative rc=$?"
+          du -sh /tmp/qt-install
+          df -h /
+
+      - name: "=== STEP 12 - Clone + build qtsvg ==="
+        run: |
+          set -ex
+          git clone --depth 1 --branch "${{ inputs.qt_version }}" \
+            https://github.com/qt/qtsvg.git /tmp/qtsvg
+          cd /tmp/qtsvg
+          /tmp/qt-install/bin/qt-cmake-private \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
+            . build \
+            2>&1 | tee /tmp/svg-configure.log
+          cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/svg-build.log
+          cmake --install build 2>&1 | tee /tmp/svg-install.log
+          echo "svg rc=$?"
+          du -sh /tmp/qt-install
+          df -h /
+
+      - name: "=== STEP 13 - Clone + build qtimageformats ==="
+        run: |
+          set -ex
+          git clone --depth 1 --branch "${{ inputs.qt_version }}" \
+            https://github.com/qt/qtimageformats.git /tmp/qtimageformats
+          cd /tmp/qtimageformats
+          /tmp/qt-install/bin/qt-cmake-private \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
+            . build \
+            2>&1 | tee /tmp/imageformats-configure.log
+          cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/imageformats-build.log
+          cmake --install build 2>&1 | tee /tmp/imageformats-install.log
+          echo "imageformats rc=$?"
+          du -sh /tmp/qt-install
+          df -h /
+
+      - name: "=== STEP 14 - Clone + build qttools ==="
+        run: |
+          set -ex
+          git clone --depth 1 --branch "${{ inputs.qt_version }}" \
+            https://github.com/qt/qttools.git /tmp/qttools
+          cd /tmp/qttools
+          /tmp/qt-install/bin/qt-cmake-private \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
+            . build \
+            2>&1 | tee /tmp/tools-configure.log
+          cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/tools-build.log
+          cmake --install build 2>&1 | tee /tmp/tools-install.log
+          echo "tools rc=$?"
+          du -sh /tmp/qt-install
+          df -h /
+
+      - name: "=== STEP 15 - Clone + build qttranslations + qt5compat ==="
+        run: |
+          set -ex
+          git clone --depth 1 --branch "${{ inputs.qt_version }}" \
+            https://github.com/qt/qttranslations.git /tmp/qttranslations
+          cd /tmp/qttranslations
+          /tmp/qt-install/bin/qt-cmake-private \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
+            . build \
+            2>&1 | tee /tmp/translations-configure.log
+          cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/translations-build.log
+          cmake --install build 2>&1 | tee /tmp/translations-install.log
+          echo "translations rc=$?"
+
+          git clone --depth 1 --branch "${{ inputs.qt_version }}" \
+            https://github.com/qt/qt5compat.git /tmp/qt5compat
+          cd /tmp/qt5compat
+          /tmp/qt-install/bin/qt-cmake-private \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
+            -DQT_HOST_PATH=/tmp/qt-host \
+            . build \
+            2>&1 | tee /tmp/qt5compat-configure.log
+          cmake --build build --parallel ${{ inputs.build_parallel }} 2>&1 | tee /tmp/qt5compat-build.log
+          cmake --install build 2>&1 | tee /tmp/qt5compat-install.log
+          echo "qt5compat rc=$?"
+          du -sh /tmp/qt-install
+          df -h /
+
+      - name: "=== STEP 16 - Final verification (hello Qt + OpenGL check) ==="
+        run: |
+          set -ex
+          cat > /tmp/hello.cpp <<'EOF'
+          #include <QCoreApplication>
+          #include <QRegularExpression>
+          #include <QSslSocket>
+          #include <iostream>
+          int main(int argc, char *argv[]) {
+              QCoreApplication a(argc, argv);
+              QRegularExpression re("^\\d+$");
+              std::cout << "regex: " << (re.match("123").hasMatch() ? "OK" : "FAIL") << std::endl;
+              std::cout << "Qt " << QT_VERSION_STR << " works!" << std::endl;
+              return 0;
+          }
+          EOF
+          /opt/mingw-mcf/bin/x86_64-w64-mingw32-g++ -O2 /tmp/hello.cpp -o /tmp/hello.exe \
+            -I/tmp/qt-install/include -I/tmp/qt-install/include/QtCore \
+            -L/tmp/qt-install/lib -lQt6Core \
+            -std=c++17
+          file /tmp/hello.exe
+          /opt/mingw-mcf/bin/x86_64-w64-mingw32-objdump -p /tmp/hello.exe | grep 'DLL Name' | head -15
+          echo "--- Qt6Gui.dll deps (opengl32 should appear with FEATURE_opengl=ON) ---"
+          /opt/mingw-mcf/bin/x86_64-w64-mingw32-objdump -p /tmp/qt-install/bin/Qt6Gui.dll | grep 'DLL Name' | head -20
+          echo "--- qwindows.dll deps ---"
+          /opt/mingw-mcf/bin/x86_64-w64-mingw32-objdump -p /tmp/qt-install/plugins/platforms/qwindows.dll | grep 'DLL Name'
+          echo "--- Qt6Network.dll deps (libssl-3-x64/libcrypto-3-x64 if OpenSSL linked) ---"
+          /opt/mingw-mcf/bin/x86_64-w64-mingw32-objdump -p /tmp/qt-install/bin/Qt6Network.dll | grep 'DLL Name'
+          echo "--- TLS plugins ---"
+          ls /tmp/qt-install/plugins/tls/
+
+      - name: "=== STEP 17 - Package full Qt install ==="
+        run: |
+          set -ex
+          cd /tmp
+          QT_VER="${{ inputs.qt_version }}"
+          QT_VER="${QT_VER#v}"
+          NAME="qt-full-mingw-mcf-${QT_VER}"
+          echo "Packaging as: $NAME"
+          tar -cJf ${NAME}.tar.xz \
+            --transform "s|^qt-install|${NAME}|" \
+            qt-install
+          ls -la ${NAME}.tar.xz
+          sha256sum ${NAME}.tar.xz > ${NAME}.tar.xz.sha256
+          cat ${NAME}.tar.xz.sha256
+          echo "=== packaging done ==="
+
+      - name: "=== STEP 18 - Upload Qt tarball artifact ==="
+        uses: actions/upload-artifact@v4
+        with:
+          name: qt-full-mingw-mcf-${{ inputs.qt_version }}
+          path: |
+            /tmp/qt-full-mingw-mcf-*.tar.xz
+            /tmp/qt-full-mingw-mcf-*.tar.xz.sha256
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: "=== STEP 19 - Upload build logs (always) ==="
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-logs-${{ inputs.qt_version }}
+          path: |
+            /tmp/host-configure.log
+            /tmp/host-build.log
+            /tmp/host-install.log
+            /tmp/configure.log
+            /tmp/config-summary.log
+            /tmp/build.log
+            /tmp/install.log
+            /tmp/shadertools-*.log
+            /tmp/declarative-*.log
+            /tmp/svg-*.log
+            /tmp/imageformats-*.log
+            /tmp/tools-*.log
+            /tmp/translations-*.log
+            /tmp/qt5compat-*.log
+          retention-days: 7
+          compression-level: 9
+          if-no-files-found: warn
