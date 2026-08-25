@@ -306,10 +306,7 @@ jobs:
           cd /tmp/qtshadertools
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
-            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
-            -DQT_HOST_PATH=/tmp/qt-host \
             . \
             2>&1 | tee /tmp/shadertools-configure.log
           CONF_RC=${PIPESTATUS[0]}
@@ -332,10 +329,7 @@ jobs:
           cd /tmp/qtdeclarative
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
-            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
-            -DQT_HOST_PATH=/tmp/qt-host \
             . \
             2>&1 | tee /tmp/declarative-configure.log
           CONF_RC=${PIPESTATUS[0]}
@@ -358,10 +352,7 @@ jobs:
           cd /tmp/qtsvg
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
-            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
-            -DQT_HOST_PATH=/tmp/qt-host \
             . \
             2>&1 | tee /tmp/svg-configure.log
           CONF_RC=${PIPESTATUS[0]}
@@ -384,10 +375,7 @@ jobs:
           cd /tmp/qtimageformats
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
-            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
-            -DQT_HOST_PATH=/tmp/qt-host \
             . \
             2>&1 | tee /tmp/imageformats-configure.log
           CONF_RC=${PIPESTATUS[0]}
@@ -410,10 +398,7 @@ jobs:
           cd /tmp/qttools
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
-            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
-            -DQT_HOST_PATH=/tmp/qt-host \
             . \
             2>&1 | tee /tmp/tools-configure.log
           CONF_RC=${PIPESTATUS[0]}
@@ -436,10 +421,7 @@ jobs:
           cd /tmp/qttranslations
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
-            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
-            -DQT_HOST_PATH=/tmp/qt-host \
             . \
             2>&1 | tee /tmp/translations-configure.log
           CONF_RC=${PIPESTATUS[0]}
@@ -457,10 +439,7 @@ jobs:
           cd /tmp/qt5compat
           /tmp/qt-install/bin/qt-cmake-private \
             -B build \
-            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/cmake/toolchain-mingw-mcf.cmake \
-            -DQT_HOST_PATH=/tmp/qt-host \
             . \
             2>&1 | tee /tmp/qt5compat-configure.log
           CONF_RC=${PIPESTATUS[0]}
