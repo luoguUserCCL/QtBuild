@@ -177,8 +177,6 @@ jobs:
             -DFEATURE_vulkan=OFF \
             -DFEATURE_dbus=OFF \
             -DFEATURE_libudev=OFF \
-            -DFEATURE_printdialog=OFF \
-            -DFEATURE_pdf=OFF \
             2>&1 | tee /tmp/host-configure.log
           echo "host-configure rc=${PIPESTATUS[0]}"
           df -h /
