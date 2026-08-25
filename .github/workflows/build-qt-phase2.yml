@@ -442,9 +442,13 @@ jobs:
               return 0;
           }
           EOF
+          # NOTE: QSslSocket lives in QtNetwork -> need its include dir AND lib
           /opt/mingw-mcf/bin/x86_64-w64-mingw32-g++ -O2 /tmp/hello.cpp -o /tmp/hello.exe \
-            -I/tmp/qt-install/include -I/tmp/qt-install/include/QtCore \
-            -L/tmp/qt-install/lib -lQt6Core \
+            -I/tmp/qt-install/include \
+            -I/tmp/qt-install/include/QtCore \
+            -I/tmp/qt-install/include/QtNetwork \
+            -L/tmp/qt-install/lib -lQt6Core -lQt6Network \
+            -I/opt/qt-deps/include -L/opt/qt-deps/lib -lssl -lcrypto \
             -std=c++17
           file /tmp/hello.exe
           /opt/mingw-mcf/bin/x86_64-w64-mingw32-objdump -p /tmp/hello.exe | grep 'DLL Name' | head -15
@@ -456,6 +460,12 @@ jobs:
           /opt/mingw-mcf/bin/x86_64-w64-mingw32-objdump -p /tmp/qt-install/bin/Qt6Network.dll | grep 'DLL Name'
           echo "--- TLS plugins ---"
           ls /tmp/qt-install/plugins/tls/
+          echo "--- QML modules installed ---"
+          ls /tmp/qt-install/bin/ | grep -E 'qml|Qt6Qml' | head -10
+          ls /tmp/qt-install/lib/ | grep -iE 'qml|quick' | head -15
+          echo "--- total install size ---"
+          du -sh /tmp/qt-install
+          find /tmp/qt-install -type f | wc -l
 
       - name: "=== STEP 17 - Package full Qt install ==="
         run: |
